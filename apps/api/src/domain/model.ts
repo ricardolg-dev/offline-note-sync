@@ -11,6 +11,18 @@ export type Operation = {
   text: string;
 };
 
+export type NoteRevision = {
+  revision: number;
+  text: string;
+};
+
+export type RevisionPage = {
+  note_id: string;
+  revisions: NoteRevision[];
+  next_after: number;
+  has_more: boolean;
+};
+
 export type FieldError = {
   field: string | null;
   message: string;

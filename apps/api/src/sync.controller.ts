@@ -10,16 +10,24 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
 } from '@nestjs/common';
 import { z } from 'zod';
-import type { Note, OperationResult } from './domain/model.ts';
+import type { Note, OperationResult, RevisionPage } from './domain/model.ts';
 import { parseOperation } from './domain/parse-operation.ts';
 import { SyncService } from './sync.service.ts';
 
 export const MAX_OPERATIONS_PER_REQUEST = 100;
+export const MAX_REVISIONS_PER_PAGE = 100;
+const DEFAULT_REVISIONS_PER_PAGE = 20;
 
 const syncRequestSchema = z.object({
   operations: z.array(z.unknown()).min(1).max(MAX_OPERATIONS_PER_REQUEST),
+});
+
+const revisionsQuerySchema = z.object({
+  after: z.coerce.number().int().nonnegative().default(0),
+  limit: z.coerce.number().int().max(MAX_REVISIONS_PER_PAGE).default(DEFAULT_REVISIONS_PER_PAGE),
 });
 
 @Controller()
@@ -61,5 +69,31 @@ export class SyncController {
       throw new NotFoundException(`note ${noteId} not found`);
     }
     return note;
+  }
+
+  @Get('notes/:id/revisions')
+  async readRevisions(
+    @Param('id', ParseUUIDPipe) noteId: string,
+    @Query() query: unknown,
+  ): Promise<RevisionPage> {
+    const request = revisionsQuerySchema.safeParse(query);
+    if (!request.success) {
+      throw new BadRequestException({
+        message: 'invalid revisions query',
+        errors: request.error.issues.map((issue) => ({
+          field: issue.path.length > 0 ? issue.path.join('.') : null,
+          message: issue.message,
+        })),
+      });
+    }
+    const page = await this.syncService.readRevisions(
+      noteId,
+      request.data.after,
+      request.data.limit,
+    );
+    if (page.revisions.length === 0) {
+      throw new NotFoundException(`note ${noteId} not found`);
+    }
+    return page;
   }
 }

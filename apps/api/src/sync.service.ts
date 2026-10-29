@@ -4,6 +4,7 @@ import type {
   Note,
   Operation,
   OperationResult,
+  RevisionPage,
   SavedResult,
   StoredOperation,
 } from './domain/model.ts';
@@ -40,6 +41,17 @@ export class SyncService {
 
   listNotes(): Promise<Note[]> {
     return this.repository.listNotes(this.database);
+  }
+
+  async readRevisions(noteId: string, after: number, limit: number): Promise<RevisionPage> {
+    const rows = await this.repository.listRevisions(this.database, noteId, after, limit + 1);
+    const revisions = rows.slice(0, limit);
+    return {
+      note_id: noteId,
+      revisions,
+      next_after: revisions.at(-1)?.revision ?? after,
+      has_more: rows.length > limit,
+    };
   }
 
   deleteAllNotesAndOperations(): Promise<void> {

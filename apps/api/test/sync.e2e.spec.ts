@@ -8,7 +8,7 @@ import { DevController } from '../src/dev.controller.ts';
 import { MAX_TEXT_BYTES } from '../src/domain/parse-operation.ts';
 import type { OperationResult } from '../src/domain/model.ts';
 import type { Env } from '../src/env.ts';
-import { MAX_OPERATIONS_PER_REQUEST } from '../src/sync.controller.ts';
+import { MAX_OPERATIONS_PER_REQUEST, MAX_REVISIONS_PER_PAGE } from '../src/sync.controller.ts';
 import { SyncService } from '../src/sync.service.ts';
 import { note, noteId, otherNoteId, uuid } from './fixtures.ts';
 
@@ -184,5 +184,53 @@ describe('POST /dev/reset', () => {
     const config = { get: () => false } as unknown as ConfigService<Env, true>;
     const devController = new DevController(config, app.get(SyncService));
     await expect(devController.resetDatabase()).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('GET /notes/:id/revisions', () => {
+  async function revisions(query = ''): Promise<Response> {
+    return fetch(`${baseUrl}/notes/${noteId}/revisions${query}`);
+  }
+
+  it('pages the revisions of a note in order', async () => {
+    await sync([
+      { op_id: uuid(1), note_id: noteId, base_revision: 0, text: 'a' },
+      { op_id: uuid(2), note_id: noteId, base_revision: 1, text: 'b' },
+      { op_id: uuid(3), note_id: noteId, base_revision: 2, text: 'c' },
+    ]);
+    const response = await revisions('?limit=2');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      note_id: noteId,
+      revisions: [
+        { revision: 1, text: 'a' },
+        { revision: 2, text: 'b' },
+      ],
+      next_after: 2,
+      has_more: true,
+    });
+  });
+
+  it('keeps revisions of other notes out', async () => {
+    await sync([
+      { op_id: uuid(1), note_id: noteId, base_revision: 0, text: 'a' },
+      { op_id: uuid(2), note_id: otherNoteId, base_revision: 0, text: 'b' },
+    ]);
+    const response = await revisions();
+    expect(await response.json()).toEqual({
+      note_id: noteId,
+      revisions: [{ revision: 1, text: 'a' }],
+      next_after: 1,
+      has_more: false,
+    });
+  });
+
+  it('answers 404 for a note that does not exist', async () => {
+    expect((await revisions()).status).toBe(404);
+  });
+
+  it(`answers 400 for a limit above ${String(MAX_REVISIONS_PER_PAGE)} or a negative after`, async () => {
+    expect((await revisions(`?limit=${String(MAX_REVISIONS_PER_PAGE + 1)}`)).status).toBe(400);
+    expect((await revisions('?after=-1')).status).toBe(400);
   });
 });

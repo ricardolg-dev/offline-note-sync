@@ -92,6 +92,7 @@ There are three test files in `apps/api/test`:
 
 - `POST /sync` takes `{ "operations": [...] }` with 1-100 operations and answers `{ "results": [...] }`, one result per operation, in the order sent.
 - `GET /notes` lists every note, and `GET /notes/:id` reads one at its latest revision.
+- `GET /notes/:id/revisions?after=&limit=` pages the history of a note, so a device that was offline can catch up revision by revision. See below.
 - `POST /dev/reset` deletes everything, and only exists when `ENABLE_DEV_ROUTES=true`.
 
 An operation is `{ op_id, note_id, base_revision, text }`, where the device creates both UUIDs and sends base 0 to create a note. Each result has one of these statuses:
@@ -103,6 +104,16 @@ An operation is `{ op_id, note_id, base_revision, text }`, where the device crea
 - `invalid`: a field is wrong, and `errors` lists which ones.
 
 The first three are saved with the operation, so resending the same operation returns the same result without applying anything. The last two are not saved, which leaves an invalid operation's `op_id` free to be fixed and sent again.
+
+## Revision history
+
+A device that was offline for a while only knows the last revision it saw. `GET /notes/:id/revisions` lets it catch up with what happened to a note since then, one page at a time:
+
+- `after` (default `0`) is the last revision the device already has. The page holds the revisions **after** it, oldest first, so `after=0` starts from the creation.
+- `limit` (default `20`) is how many revisions fit in a page, from 1 to 100.
+- Each item is a revision the note went through, with its number and the text it had at that revision.
+- `next_after` is the `after` to send for the next page, and `has_more` says whether there is one.
+- `404` means the note does not exist. A device that is already up to date gets `200` with an empty page.
 
 ## Three tests worth reading
 

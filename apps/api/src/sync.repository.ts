@@ -1,9 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { Database, Transaction } from './db/database.module.ts';
 import { notes, operations } from './db/schema.ts';
-import type { Note, Operation, SavedResult, StoredOperation } from './domain/model.ts';
+import type {
+  Note,
+  NoteRevision,
+  Operation,
+  SavedResult,
+  StoredOperation,
+} from './domain/model.ts';
 
 const OPERATION_LOCK_CLASS = 1;
 const NOTE_LOCK_CLASS = 2;
@@ -58,6 +64,27 @@ export class SyncRepository {
 
   listNotes(database: Database): Promise<Note[]> {
     return database.select().from(notes).orderBy(notes.id);
+  }
+
+  async listRevisions(
+    database: Database,
+    noteId: string,
+    after: number,
+    limit: number,
+  ): Promise<NoteRevision[]> {
+    const rows = await database
+      .select({ revision: operations.revision, text: operations.text })
+      .from(operations)
+      .where(
+        and(
+          eq(operations.noteId, noteId),
+          isNotNull(operations.revision),
+          gte(operations.revision, after),
+        ),
+      )
+      .orderBy(operations.opId)
+      .limit(limit);
+    return rows.flatMap(({ revision, text }) => (revision === null ? [] : [{ revision, text }]));
   }
 
   async deleteAllNotesAndOperations(database: Database): Promise<void> {
